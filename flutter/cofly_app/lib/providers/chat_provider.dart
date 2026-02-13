@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:window_manager/window_manager.dart';
 
 import '../models/chat.dart';
 import '../models/message.dart';
 import '../services/api_service.dart';
+import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 import '../services/ws_service.dart';
 import '../utils/constants.dart';
@@ -210,6 +212,10 @@ class ChatProvider with ChangeNotifier {
       _messages[existingIndex] = message;
     } else {
       _messages.add(message);
+      // Only notify for genuinely new messages from bot (not stream updates)
+      if (message.isFromBot) {
+        _maybeShowNotification(message);
+      }
     }
     notifyListeners();
 
@@ -260,6 +266,21 @@ class ChatProvider with ChangeNotifier {
   }
 
   // ==================== Helpers ====================
+
+  /// Show notification if window is not focused/visible
+  Future<void> _maybeShowNotification(Message message) async {
+    final isFocused = await windowManager.isFocused();
+    final isVisible = await windowManager.isVisible();
+    if (!isFocused || !isVisible) {
+      final body = message.content.length > 100
+          ? '${message.content.substring(0, 100)}...'
+          : message.content;
+      await NotificationService().showMessageNotification(
+        title: 'Cofly',
+        body: body,
+      );
+    }
+  }
 
   /// 滚动到底部
   void _scrollToBottom() {

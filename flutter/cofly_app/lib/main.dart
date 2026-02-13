@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'config/theme.dart';
 import 'providers/auth_provider.dart';
@@ -8,9 +9,16 @@ import 'providers/theme_provider.dart';
 import 'screens/chat/chat_page.dart';
 import 'screens/onboarding/onboarding_page.dart';
 import 'screens/settings/settings_page.dart';
+import 'services/notification_service.dart';
 import 'services/storage_service.dart';
+import 'services/tray_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await windowManager.ensureInitialized();
+  await windowManager.setPreventClose(true);
+  await TrayService().init();
+  await NotificationService().init();
   runApp(const CoflyApp());
 }
 
@@ -21,13 +29,14 @@ class CoflyApp extends StatefulWidget {
   State<CoflyApp> createState() => _CoflyAppState();
 }
 
-class _CoflyAppState extends State<CoflyApp> {
+class _CoflyAppState extends State<CoflyApp> with WindowListener {
   late final ThemeProvider _themeProvider;
   late final AuthProvider _authProvider;
 
   @override
   void initState() {
     super.initState();
+    windowManager.addListener(this);
     _themeProvider = ThemeProvider();
     _authProvider = AuthProvider();
 
@@ -37,6 +46,18 @@ class _CoflyAppState extends State<CoflyApp> {
   Future<void> _initializeApp() async {
     await _themeProvider.init();
     await _authProvider.checkAuthStatus();
+  }
+
+  @override
+  void onWindowClose() async {
+    // Hide instead of quit
+    await windowManager.hide();
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
   }
 
   @override
