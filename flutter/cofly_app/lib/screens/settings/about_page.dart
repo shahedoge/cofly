@@ -21,7 +21,7 @@ class AboutPage extends StatelessWidget {
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
               SizedBox(height: 4),
-              Text('版本 1.0.0', style: TextStyle(color: Colors.grey)),
+              Text('版本 0.0.1', style: TextStyle(color: Colors.grey)),
             ],
           ),
           const SizedBox(height: 32),
