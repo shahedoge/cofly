@@ -53,6 +53,9 @@ dependencies:
   # Image picker for avatar selection
   image_picker: ^1.1.2
 
+  # File picker for sending files
+  file_picker: ^8.0.0
+
   # App directory paths
   path_provider: ^2.1.5
 

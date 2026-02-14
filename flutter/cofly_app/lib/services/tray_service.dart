@@ -1,6 +1,8 @@
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
+import '../utils/platform_helper.dart';
+
 /// 系统托盘服务（单例）
 class TrayService with TrayListener {
   TrayService._();
@@ -10,6 +12,7 @@ class TrayService with TrayListener {
   bool _initialized = false;
 
   Future<void> init() async {
+    if (!PlatformHelper.isDesktop) return;
     if (_initialized) return;
 
     // tray_manager on macOS loads the icon via rootBundle.load(),

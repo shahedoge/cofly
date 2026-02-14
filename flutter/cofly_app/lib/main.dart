@@ -12,12 +12,15 @@ import 'screens/settings/settings_page.dart';
 import 'services/notification_service.dart';
 import 'services/storage_service.dart';
 import 'services/tray_service.dart';
+import 'utils/platform_helper.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await windowManager.ensureInitialized();
-  await windowManager.setPreventClose(true);
-  await TrayService().init();
+  if (PlatformHelper.isDesktop) {
+    await windowManager.ensureInitialized();
+    await windowManager.setPreventClose(true);
+    await TrayService().init();
+  }
   await NotificationService().init();
   runApp(const CoflyApp());
 }
@@ -36,7 +39,9 @@ class _CoflyAppState extends State<CoflyApp> with WindowListener {
   @override
   void initState() {
     super.initState();
-    windowManager.addListener(this);
+    if (PlatformHelper.isDesktop) {
+      windowManager.addListener(this);
+    }
     _themeProvider = ThemeProvider();
     _authProvider = AuthProvider();
 
@@ -50,13 +55,17 @@ class _CoflyAppState extends State<CoflyApp> with WindowListener {
 
   @override
   void onWindowClose() async {
-    // Hide instead of quit
-    await windowManager.hide();
+    if (PlatformHelper.isDesktop) {
+      // Hide instead of quit
+      await windowManager.hide();
+    }
   }
 
   @override
   void dispose() {
-    windowManager.removeListener(this);
+    if (PlatformHelper.isDesktop) {
+      windowManager.removeListener(this);
+    }
     super.dispose();
   }
 

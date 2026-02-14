@@ -1,4 +1,6 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/chat_provider.dart';
@@ -43,6 +45,25 @@ class _ChatPageState extends State<ChatPage> {
 
   void _sendMessage(String content) {
     _chatProvider.sendMessage(content);
+  }
+
+  Future<void> _pickAndSendImage() async {
+    final picker = ImagePicker();
+    final xFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1920,
+      imageQuality: 85,
+    );
+    if (xFile == null) return;
+    await _chatProvider.sendImageMessage(xFile.path);
+  }
+
+  Future<void> _pickAndSendFile() async {
+    final result = await FilePicker.platform.pickFiles();
+    if (result == null || result.files.isEmpty) return;
+    final file = result.files.first;
+    if (file.path == null) return;
+    await _chatProvider.sendFileMessage(file.path!, file.name);
   }
 
   void _openSettings() {
@@ -147,6 +168,7 @@ class _ChatPageState extends State<ChatPage> {
     final isSending = chatProvider.isSending;
     final isConnected = chatProvider.isConnected;
     final isWaitingReply = chatProvider.isWaitingReply;
+    final uploadProgress = chatProvider.uploadProgress;
 
     final botName = _storage.getBotName() ?? 'Bot';
 
@@ -191,8 +213,11 @@ class _ChatPageState extends State<ChatPage> {
           // 输入栏
           InputBar(
             onSend: _sendMessage,
+            onPickImage: _pickAndSendImage,
+            onPickFile: _pickAndSendFile,
             isSending: isSending,
             isConnected: isConnected,
+            uploadProgress: uploadProgress,
           ),
         ],
       ),

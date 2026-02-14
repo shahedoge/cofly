@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -8,6 +10,7 @@ import '../services/notification_service.dart';
 import '../services/storage_service.dart';
 import '../services/ws_service.dart';
 import '../utils/constants.dart';
+import '../utils/platform_helper.dart';
 
 /// 聊天提供者
 class ChatProvider with ChangeNotifier {
@@ -25,6 +28,7 @@ class ChatProvider with ChangeNotifier {
   bool _isSending = false;
   bool _isWaitingReply = false;
   String? _errorMessage;
+  double? _uploadProgress;
 
   // Scroll controller for message list
   final ScrollController scrollController = ScrollController();
@@ -38,6 +42,8 @@ class ChatProvider with ChangeNotifier {
   bool get isSending => _isSending;
   bool get isWaitingReply => _isWaitingReply;
   String? get errorMessage => _errorMessage;
+  bool get isUploading => _uploadProgress != null;
+  double? get uploadProgress => _uploadProgress;
 
   // ==================== Lifecycle ====================
 
@@ -194,6 +200,139 @@ class ChatProvider with ChangeNotifier {
     }
   }
 
+  /// 发送图片消息
+  Future<bool> sendImageMessage(String filePath) async {
+    if (_currentChatId.isEmpty) return false;
+
+    _uploadProgress = 0.0;
+    notifyListeners();
+
+    try {
+      // 创建本地预览消息（content = 本地路径）
+      final localMessage = Message(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        chatId: _currentChatId,
+        senderId: _storage.getUsername() ?? '',
+        content: filePath,
+        type: MessageType.image,
+        createdAt: DateTime.now(),
+        isFromBot: false,
+      );
+      _messages.add(localMessage);
+      notifyListeners();
+      await _storage.saveMessage(localMessage);
+      _scrollToBottom();
+
+      // 上传获取 image_key
+      final imageKey = await _api.uploadImage(
+        filePath: filePath,
+        onProgress: (p) {
+          _uploadProgress = p;
+          notifyListeners();
+        },
+      );
+
+      // 更新本地消息 content 为 image_key JSON
+      final idx = _messages.indexWhere((m) => m.id == localMessage.id);
+      if (idx >= 0) {
+        final updated = localMessage.copyWith(
+          content: jsonEncode({'image_key': imageKey}),
+        );
+        _messages[idx] = updated;
+        await _storage.saveMessage(updated);
+      }
+
+      // 发送到 API
+      if (_botOpenId != null) {
+        await _api.sendMessage(
+          receiveId: _botOpenId!,
+          content: imageKey,
+          type: MessageType.image,
+        );
+        _isWaitingReply = true;
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('[Chat] sendImageMessage error: $e');
+      _errorMessage = '图片发送失败: $e';
+      return false;
+    } finally {
+      _uploadProgress = null;
+      notifyListeners();
+    }
+  }
+
+  /// 发送文件消息
+  Future<bool> sendFileMessage(String filePath, String fileName) async {
+    if (_currentChatId.isEmpty) return false;
+
+    _uploadProgress = 0.0;
+    notifyListeners();
+
+    try {
+      // 创建本地预览消息
+      final localContent = jsonEncode({
+        'file_name': fileName,
+        'local_path': filePath,
+      });
+      final localMessage = Message(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        chatId: _currentChatId,
+        senderId: _storage.getUsername() ?? '',
+        content: localContent,
+        type: MessageType.file,
+        createdAt: DateTime.now(),
+        isFromBot: false,
+      );
+      _messages.add(localMessage);
+      notifyListeners();
+      await _storage.saveMessage(localMessage);
+      _scrollToBottom();
+
+      // 上传获取 file_key
+      final fileKey = await _api.uploadFile(
+        filePath: filePath,
+        fileName: fileName,
+        onProgress: (p) {
+          _uploadProgress = p;
+          notifyListeners();
+        },
+      );
+
+      // 更新本地消息 content
+      final serverContent = jsonEncode({
+        'file_key': fileKey,
+        'file_name': fileName,
+      });
+      final idx = _messages.indexWhere((m) => m.id == localMessage.id);
+      if (idx >= 0) {
+        final updated = localMessage.copyWith(content: serverContent);
+        _messages[idx] = updated;
+        await _storage.saveMessage(updated);
+      }
+
+      // 发送到 API
+      if (_botOpenId != null) {
+        await _api.sendMessage(
+          receiveId: _botOpenId!,
+          content: serverContent,
+          type: MessageType.file,
+        );
+        _isWaitingReply = true;
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('[Chat] sendFileMessage error: $e');
+      _errorMessage = '文件发送失败: $e';
+      return false;
+    } finally {
+      _uploadProgress = null;
+      notifyListeners();
+    }
+  }
+
   /// 处理收到的消息（包括新消息和更新消息）
   void _handleIncomingMessage(Message message) {
     // 统一 chatId 为 _currentChatId（botUsername），确保本地存储 key 一致
@@ -269,9 +408,13 @@ class ChatProvider with ChangeNotifier {
 
   /// Show notification if window is not focused/visible
   Future<void> _maybeShowNotification(Message message) async {
-    final isFocused = await windowManager.isFocused();
-    final isVisible = await windowManager.isVisible();
-    if (!isFocused || !isVisible) {
+    bool shouldNotify = true;
+    if (PlatformHelper.isDesktop) {
+      final isFocused = await windowManager.isFocused();
+      final isVisible = await windowManager.isVisible();
+      shouldNotify = !isFocused || !isVisible;
+    }
+    if (shouldNotify) {
       final body = message.content.length > 100
           ? '${message.content.substring(0, 100)}...'
           : message.content;

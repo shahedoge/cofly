@@ -242,6 +242,91 @@ class ApiService {
     }
   }
 
+  // ==================== Upload Endpoints ====================
+
+  /// 上传图片，返回 image_key
+  Future<String> uploadImage({
+    required String filePath,
+    void Function(double)? onProgress,
+  }) async {
+    debugPrint('[API] uploadImage: filePath=$filePath');
+    try {
+      final formData = FormData.fromMap({
+        'image_type': 'message',
+        'image': await MultipartFile.fromFile(filePath),
+      });
+
+      final response = await _dio.post(
+        '/open-apis/im/v1/images',
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+        onSendProgress: (sent, total) {
+          if (total > 0 && onProgress != null) {
+            onProgress(sent / total);
+          }
+        },
+      );
+
+      final body = response.data as Map<String, dynamic>;
+      final code = body['code'] as int?;
+      if (code == 0) {
+        final data = body['data'] as Map<String, dynamic>?;
+        final imageKey = data?['image_key'] as String?;
+        if (imageKey != null && imageKey.isNotEmpty) {
+          debugPrint('[API] uploadImage success: image_key=$imageKey');
+          return imageKey;
+        }
+      }
+      throw ApiException(message: '上传图片失败: ${body['msg'] ?? 'unknown'}');
+    } on DioException catch (e) {
+      throw _handleDioException(e);
+    }
+  }
+
+  /// 上传文件，返回 file_key
+  Future<String> uploadFile({
+    required String filePath,
+    required String fileName,
+    void Function(double)? onProgress,
+  }) async {
+    debugPrint('[API] uploadFile: filePath=$filePath, fileName=$fileName');
+    try {
+      final formData = FormData.fromMap({
+        'file_type': 'stream',
+        'file_name': fileName,
+        'file': await MultipartFile.fromFile(filePath, filename: fileName),
+      });
+
+      final response = await _dio.post(
+        '/open-apis/im/v1/files',
+        data: formData,
+        options: Options(contentType: 'multipart/form-data'),
+        onSendProgress: (sent, total) {
+          if (total > 0 && onProgress != null) {
+            onProgress(sent / total);
+          }
+        },
+      );
+
+      final body = response.data as Map<String, dynamic>;
+      final code = body['code'] as int?;
+      if (code == 0) {
+        final data = body['data'] as Map<String, dynamic>?;
+        final fileKey = data?['file_key'] as String?;
+        if (fileKey != null && fileKey.isNotEmpty) {
+          debugPrint('[API] uploadFile success: file_key=$fileKey');
+          return fileKey;
+        }
+      }
+      throw ApiException(message: '上传文件失败: ${body['msg'] ?? 'unknown'}');
+    } on DioException catch (e) {
+      throw _handleDioException(e);
+    }
+  }
+
+  /// 获取 API base URL（供 UI 层构造图片下载 URL）
+  String get baseUrl => _dio.options.baseUrl;
+
   // ==================== Message Endpoints ====================
 
   /// 发送消息
@@ -256,7 +341,10 @@ class ApiService {
       String encodedContent;
       if (type == MessageType.text) {
         encodedContent = jsonEncode({'text': content});
+      } else if (type == MessageType.image) {
+        encodedContent = jsonEncode({'image_key': content});
       } else {
+        // file and other types: content is already JSON-encoded by caller
         encodedContent = content;
       }
 

@@ -237,7 +237,11 @@ class WsService {
 
       debugPrint('[WS] receive_v1: msgId=$messageId, chatId=$chatId, type=$messageType');
 
-      final textContent = _extractContent(contentStr);
+      // Only binary media types skip content extraction; all others (text, post, interactive, etc.) get parsed
+      const rawPassthroughTypes = {'image', 'file', 'audio', 'video'};
+      final textContent = rawPassthroughTypes.contains(messageType)
+          ? contentStr
+          : _extractContent(contentStr);
 
       final senderId = sender?['sender_id']?['open_id'] as String? ?? '';
 
@@ -276,7 +280,13 @@ class WsService {
 
       debugPrint('[WS] update_v1: msgId=$messageId, chatId=$chatId');
 
-      final textContent = _extractContent(contentStr);
+      final messageType = msgData['message_type'] as String? ?? 'text';
+
+      // Only binary media types skip content extraction; all others (text, post, interactive, etc.) get parsed
+      const rawPassthroughTypes = {'image', 'file', 'audio', 'video'};
+      final textContent = rawPassthroughTypes.contains(messageType)
+          ? contentStr
+          : _extractContent(contentStr);
 
       final senderId =
           event['sender']?['sender_id']?['open_id'] as String? ?? '';
@@ -287,8 +297,6 @@ class WsService {
       final createdAt = createTime != null
           ? DateTime.fromMillisecondsSinceEpoch(int.parse(createTime))
           : DateTime.now();
-
-      final messageType = msgData['message_type'] as String? ?? 'text';
 
       final message = Message(
         id: messageId,
