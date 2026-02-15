@@ -80,7 +80,8 @@ class WSManager:
         return any_sent
 
 
-def build_message_event(
+def _build_message_event_base(
+    event_type: str,
     sender_id: str,
     receiver_username: str,
     message_id: str,
@@ -96,7 +97,7 @@ def build_message_event(
         "schema": "2.0",
         "header": {
             "event_id": str(uuid.uuid4()),
-            "event_type": "im.message.receive_v1",
+            "event_type": event_type,
             "create_time": now_ms,
             "token": "",
             "app_id": receiver_username,
@@ -124,6 +125,44 @@ def build_message_event(
             },
         },
     }
+
+
+def build_message_event(
+    sender_id: str,
+    receiver_username: str,
+    message_id: str,
+    chat_id: str,
+    chat_type: str,
+    message_type: str,
+    content: str,
+    root_id: str = "",
+    parent_id: str = "",
+) -> dict:
+    return _build_message_event_base(
+        "im.message.receive_v1",
+        sender_id, receiver_username, message_id, chat_id, chat_type,
+        message_type, content, root_id, parent_id,
+    )
+
+
+def build_message_sync_event(
+    sender_id: str,
+    receiver_username: str,
+    message_id: str,
+    chat_id: str,
+    chat_type: str,
+    message_type: str,
+    content: str,
+    root_id: str = "",
+    parent_id: str = "",
+) -> dict:
+    """Same payload as build_message_event but with event_type=cofly.message.sync_v1.
+    Lark SDK bots ignore unknown event types, so the sender won't process its own messages."""
+    return _build_message_event_base(
+        "cofly.message.sync_v1",
+        sender_id, receiver_username, message_id, chat_id, chat_type,
+        message_type, content, root_id, parent_id,
+    )
 
 
 def build_message_update_event(

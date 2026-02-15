@@ -210,6 +210,7 @@ class WsService {
 
       switch (eventType) {
         case 'im.message.receive_v1':
+        case 'cofly.message.sync_v1':
           _handleMessageReceive(evt);
           break;
         case 'im.message.update_v1':

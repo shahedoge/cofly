@@ -10,7 +10,7 @@ from auth import get_current_user
 from database import get_db
 from models import User, Chat, ChatMember, Message
 from schemas import SendMessageRequest, ReplyMessageRequest, PatchMessageRequest
-from ws_manager import ws_manager, build_message_event, build_message_update_event, build_ack_event
+from ws_manager import ws_manager, build_message_event, build_message_sync_event, build_message_update_event, build_ack_event
 
 router = APIRouter()
 
@@ -59,14 +59,16 @@ async def _save_and_push(
     db.commit()
     db.refresh(msg)
 
-    # Push to ALL members (including sender for multi-device sync)
+    # Push to all members; sender gets sync event (ignored by Lark SDK bots),
+    # others get receive event.
     any_bot_delivered = False
     members = db.query(ChatMember).filter(ChatMember.chat_id == chat.id).all()
     for m in members:
         target_user = db.query(User).filter(User.id == m.user_id).first()
         if not target_user:
             continue
-        event = build_message_event(
+        build = build_message_sync_event if m.user_id == sender.id else build_message_event
+        event = build(
             sender_id=sender.id,
             receiver_username=target_user.username,
             message_id=msg.id,
