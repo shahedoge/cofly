@@ -152,11 +152,7 @@ class _SplashPageState extends State<SplashPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.chat_bubble,
-              size: 80,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+            Image.asset('assets/logo.png', width: 80, height: 80),
             const SizedBox(height: 16),
             const Text(
               'Cofly',

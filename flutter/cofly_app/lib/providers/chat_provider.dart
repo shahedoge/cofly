@@ -64,9 +64,10 @@ class ChatProvider with ChangeNotifier {
       }
     });
 
-    // Listen to incoming messages
-    _wsService.messageStream.listen((message) {
-      _handleIncomingMessage(message);
+    // Listen to incoming messages (Record carries event_type for dedup)
+    _wsService.messageStream.listen((record) {
+      final (message, eventType) = record;
+      _handleIncomingMessage(message, eventType: eventType);
     });
   }
 
@@ -368,7 +369,7 @@ class ChatProvider with ChangeNotifier {
   }
 
   /// 处理收到的消息（包括新消息和更新消息）
-  void _handleIncomingMessage(Message message) {
+  void _handleIncomingMessage(Message message, {String eventType = ''}) {
     // 统一 chatId 为 _currentChatId（botUsername），确保本地存储 key 一致
     if (_currentChatId.isNotEmpty && message.chatId != _currentChatId) {
       message = message.copyWith(chatId: _currentChatId);
@@ -377,6 +378,26 @@ class ChatProvider with ChangeNotifier {
     // Bot 回复到达，取消等待提示
     if (message.isFromBot && _isWaitingReply) {
       _isWaitingReply = false;
+    }
+
+    // 自发消息同步去重：sync_v1 事件且发送者是当前用户时，
+    // 用内容+时间窗口做模糊匹配，避免 WS 先于 API 响应导致重复
+    if (eventType == 'cofly.message.sync_v1' &&
+        _userOpenId != null &&
+        message.senderId == _userOpenId) {
+      final localIdx = _messages.indexWhere((m) =>
+          !m.isFromBot &&
+          m.content == message.content &&
+          (m.createdAt.difference(message.createdAt).inMilliseconds).abs() < 5000);
+      if (localIdx >= 0) {
+        final oldMessage = _messages[localIdx];
+        _messages[localIdx] = message;
+        notifyListeners();
+        _storage.deleteMessage(oldMessage);
+        _storage.saveMessage(message);
+        return; // 已去重，不再追加
+      }
+      // 未找到本地匹配 → 来自其他设备，正常追加
     }
 
     // 检查是否已存在（更新事件：替换已有消息内容）

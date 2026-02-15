@@ -38,13 +38,13 @@ class WsService {
   int _pingSeqId = 1;
 
   // Streams
-  final _messageStream = StreamController<Message>.broadcast();
+  final _messageStream = StreamController<(Message, String)>.broadcast();
   final _connectionStateStream = StreamController<bool>.broadcast();
 
   // ==================== Connection Management ====================
 
   bool get isConnected => _isConnected;
-  Stream<Message> get messageStream => _messageStream.stream;
+  Stream<(Message, String)> get messageStream => _messageStream.stream;
   Stream<bool> get connectionStateStream => _connectionStateStream.stream;
 
   /// 连接 WebSocket
@@ -256,6 +256,8 @@ class WsService {
           ? DateTime.fromMillisecondsSinceEpoch(int.parse(createTime))
           : DateTime.now();
 
+      final eventType = header?['event_type'] as String? ?? '';
+
       final message = Message(
         id: messageId,
         chatId: chatId,
@@ -266,7 +268,7 @@ class WsService {
         isFromBot: _botOpenId != null ? senderId == _botOpenId : true,
       );
 
-      _messageStream.add(message);
+      _messageStream.add((message, eventType));
     } catch (e) {
       debugPrint('[WS] _handleMessageReceive error: $e');
     }
@@ -312,7 +314,7 @@ class WsService {
         isFromBot: _botOpenId != null ? senderId == _botOpenId : true,
       );
 
-      _messageStream.add(message);
+      _messageStream.add((message, 'im.message.update_v1'));
     } catch (e) {
       debugPrint('[WS] _handleMessageUpdate error: $e');
     }

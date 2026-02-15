@@ -12,16 +12,16 @@ class AboutPage extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           // 应用图标和名称
-          const Column(
+          Column(
             children: [
-              Icon(Icons.chat_bubble, size: 80, color: Colors.blue),
-              SizedBox(height: 16),
-              Text(
+              Image.asset('assets/logo.png', width: 80, height: 80),
+              const SizedBox(height: 16),
+              const Text(
                 'Cofly',
                 style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               ),
-              SizedBox(height: 4),
-              Text('版本 0.0.1', style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 4),
+              const Text('版本 0.0.2', style: TextStyle(color: Colors.grey)),
             ],
           ),
           const SizedBox(height: 32),
@@ -165,6 +165,15 @@ class AboutPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text('v0.0.2', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('• 多端同步支持'),
+              Text('• 修复发送消息重复显示的问题'),
+              Text('• Android 平台支持'),
+              Text('• 图片消息收发'),
+              Text('• macOS 系统托盘和本地通知'),
+              Text('• 飞书卡片消息格式解析'),
+              SizedBox(height: 16),
               Text('v0.0.1', style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
               Text('• 首次发布'),
@@ -172,8 +181,6 @@ class AboutPage extends StatelessWidget {
               Text('• 用户认证系统'),
               Text('• 聊天记录本地缓存'),
               Text('• Material You 主题支持'),
-              SizedBox(height: 16),
-              Text('敬请期待更多功能更新！', style: TextStyle(color: Colors.grey)),
             ],
           ),
         ),
