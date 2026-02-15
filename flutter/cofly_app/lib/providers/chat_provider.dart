@@ -23,6 +23,8 @@ class ChatProvider with ChangeNotifier {
   List<Chat> _chats = [];
   String _currentChatId = '';
   String? _botOpenId;
+  String? _serverChatId;
+  String? _userOpenId;
   bool _isConnected = false;
   bool _isLoading = false;
   bool _isSending = false;
@@ -49,9 +51,17 @@ class ChatProvider with ChangeNotifier {
 
   ChatProvider() {
     // Listen to WebSocket connection state
+    bool _wasConnected = false;
     _wsService.connectionStateStream.listen((connected) {
+      final wasDisconnected = !_wasConnected && connected;
+      _wasConnected = connected;
       _isConnected = connected;
       notifyListeners();
+
+      // On reconnect, sync missed messages
+      if (wasDisconnected && _currentChatId.isNotEmpty) {
+        _syncFromServer();
+      }
     });
 
     // Listen to incoming messages
@@ -87,14 +97,26 @@ class ChatProvider with ChangeNotifier {
       _botOpenId = await _api.lookupUser(botUsername);
       debugPrint('[Chat] connectToChat: botOpenId=$_botOpenId');
 
+      // 查询当前用户的 open_id（用于同步时判断消息方向）
+      try {
+        _userOpenId = await _api.lookupUser(username);
+        debugPrint('[Chat] connectToChat: userOpenId=$_userOpenId');
+      } catch (e) {
+        debugPrint('[Chat] lookupUser(self) failed: $e');
+      }
+
       // 连接 WebSocket
       await _wsService.connect(
         chatId: botUsername,
         username: username,
+        botOpenId: _botOpenId,
       );
 
       // 加载本地历史消息
       await loadRecentMessages();
+
+      // 从服务器同步错过的消息
+      await _syncFromServer();
     } catch (e) {
       _errorMessage = e.toString();
     } finally {
@@ -170,12 +192,24 @@ class ChatProvider with ChangeNotifier {
       try {
         if (_botOpenId != null) {
           debugPrint('[Chat] sending to API: receiveId=$_botOpenId');
-          await _api.sendMessage(
+          final serverMessageId = await _api.sendMessage(
             receiveId: _botOpenId!,
             content: content.trim(),
             type: type,
           );
-          debugPrint('[Chat] sendMessage API success');
+          debugPrint('[Chat] sendMessage API success, serverMessageId=$serverMessageId');
+
+          // Update local message ID with server-assigned ID for dedup
+          if (serverMessageId != null && serverMessageId.isNotEmpty) {
+            final idx = _messages.indexWhere((m) => m.id == localMessage.id);
+            if (idx >= 0) {
+              final updated = _messages[idx].copyWith(id: serverMessageId);
+              _messages[idx] = updated;
+              await _storage.deleteMessage(localMessage);
+              await _storage.saveMessage(updated);
+            }
+          }
+
           _isWaitingReply = true;
           notifyListeners();
         } else {
@@ -401,6 +435,99 @@ class ChatProvider with ChangeNotifier {
     } finally {
       _isLoading = false;
       notifyListeners();
+    }
+  }
+
+  // ==================== Server Sync ====================
+
+  /// 解析服务器端 p2p 聊天的 UUID chat_id
+  Future<void> _resolveServerChatId() async {
+    if (_serverChatId != null) return;
+    try {
+      final response = await _api.getChatList();
+      if (response.chats.isNotEmpty) {
+        // 取第一个 p2p 聊天（当前只有一个 bot 对话）
+        _serverChatId = response.chats.first.id;
+        debugPrint('[Chat] resolved serverChatId=$_serverChatId');
+      }
+    } catch (e) {
+      debugPrint('[Chat] _resolveServerChatId error: $e');
+    }
+  }
+
+  /// 从服务器同步错过的消息
+  Future<void> _syncFromServer() async {
+    try {
+      await _resolveServerChatId();
+      if (_serverChatId == null || _serverChatId!.isEmpty) {
+        debugPrint('[Chat] _syncFromServer: no serverChatId, skip');
+        return;
+      }
+      if (_botOpenId == null) {
+        debugPrint('[Chat] _syncFromServer: no botOpenId, skip');
+        return;
+      }
+
+      // 取本地最新消息的时间戳 +1ms 作为 startTime
+      int? startTime;
+      if (_messages.isNotEmpty) {
+        final latest = _messages
+            .map((m) => m.createdAt.millisecondsSinceEpoch)
+            .reduce((a, b) => a > b ? a : b);
+        startTime = latest + 1;
+      }
+
+      debugPrint('[Chat] _syncFromServer: serverChatId=$_serverChatId, startTime=$startTime');
+      final response = await _api.getMessages(
+        chatId: _serverChatId!,
+        startTime: startTime,
+      );
+
+      if (response.items.isEmpty) {
+        debugPrint('[Chat] _syncFromServer: no new messages');
+        return;
+      }
+
+      // 已有消息 id 集合，用于去重
+      final existingIds = _messages.map((m) => m.id).toSet();
+      int added = 0;
+
+      for (final item in response.items) {
+        final message = Message.fromServerItem(
+          item,
+          localChatId: _currentChatId,
+          botOpenId: _botOpenId!,
+        );
+
+        if (existingIds.contains(message.id)) continue;
+
+        // Fuzzy dedup for user messages: if a local message has the same
+        // content and was created within 5 seconds, treat as duplicate
+        if (!message.isFromBot) {
+          final isDuplicate = _messages.any((m) =>
+              !m.isFromBot &&
+              m.content == message.content &&
+              (m.createdAt.difference(message.createdAt).inMilliseconds).abs() < 5000);
+          if (isDuplicate) {
+            debugPrint('[Chat] _syncFromServer: fuzzy dedup skipped msgId=${message.id}');
+            continue;
+          }
+        }
+
+        _messages.add(message);
+        existingIds.add(message.id);
+        await _storage.saveMessage(message);
+        added++;
+      }
+
+      if (added > 0) {
+        debugPrint('[Chat] _syncFromServer: added $added new messages');
+        _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+        notifyListeners();
+        _scrollToBottom();
+      }
+    } catch (e) {
+      debugPrint('[Chat] _syncFromServer error: $e');
     }
   }
 

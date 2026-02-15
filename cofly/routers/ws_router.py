@@ -28,14 +28,7 @@ async def ws_endpoint(request: Request, db: Session = Depends(get_db)):
     # Behind a reverse proxy, request.url.scheme is "http" even when the
     # client connected via HTTPS.  Check X-Forwarded-Proto / X-Forwarded-Ssl
     # headers that proxies (nginx, caddy, etc.) typically set.
-    forwarded_proto = (
-        request.headers.get("x-forwarded-proto")
-        or request.headers.get("x-forwarded-ssl")
-        or ""
-    ).lower()
-    if forwarded_proto in ("https", "on"):
-        scheme = "wss"
-    elif request.url.scheme == "https":
+    if request.url.scheme == "https":
         scheme = "wss"
     else:
         scheme = "ws"
@@ -151,8 +144,8 @@ async def websocket_handler(ws: WebSocket):
     try:
         while True:
             raw = await ws.receive_bytes()
-            await ws_manager.handle_frame(user_id, raw)
+            await ws_manager.handle_frame(user_id, ws, raw)
     except WebSocketDisconnect:
         pass
     finally:
-        ws_manager.disconnect(user_id)
+        ws_manager.disconnect(user_id, ws)

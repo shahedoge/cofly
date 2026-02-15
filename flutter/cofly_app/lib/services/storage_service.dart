@@ -46,6 +46,52 @@ class StorageService {
     );
 
     _isInitialized = true;
+
+    // 一次性迁移：将旧格式 key ({chatId}_{yyyyMMdd}) 添加用户名前缀
+    await _migrateMessageKeys();
+  }
+
+  /// 迁移旧格式消息 key 到新格式 ({username}_{chatId}_{yyyyMMdd})
+  Future<void> _migrateMessageKeys() async {
+    const migrationFlag = 'message_keys_migrated_v1';
+    if (_configBox.get(migrationFlag) == true) return;
+
+    final username = getUsername();
+    if (username == null || username.isEmpty) {
+      // 未登录，无法迁移，等下次 init
+      return;
+    }
+
+    final keysToMigrate = <String, dynamic>{};
+    final keysToDelete = <String>[];
+
+    for (final key in _messagesBox.keys) {
+      if (key is String && !key.startsWith('${username}_')) {
+        // 旧格式 key: {chatId}_{yyyyMMdd} — 不含用户名前缀
+        // 检查是否匹配 yyyyMMdd 结尾
+        final lastUnderscore = key.lastIndexOf('_');
+        if (lastUnderscore > 0) {
+          final datePart = key.substring(lastUnderscore + 1);
+          if (datePart.length == 8 && int.tryParse(datePart) != null) {
+            final newKey = '${username}_$key';
+            keysToMigrate[newKey] = _messagesBox.get(key);
+            keysToDelete.add(key);
+          }
+        }
+      }
+    }
+
+    for (final entry in keysToMigrate.entries) {
+      await _messagesBox.put(entry.key, entry.value);
+    }
+    for (final key in keysToDelete) {
+      await _messagesBox.delete(key);
+    }
+
+    await _configBox.put(migrationFlag, true);
+    if (keysToMigrate.isNotEmpty) {
+      debugPrint('[Storage] migrated ${keysToMigrate.length} message keys for user $username');
+    }
   }
 
   // ==================== Config Operations ====================
@@ -220,17 +266,25 @@ class StorageService {
   /// 清除指定日期之前的消息
   Future<void> clearOldMessages(String chatId, {int daysKeep = 2}) async {
     final now = DateTime.now();
+    final username = getUsername() ?? 'anonymous';
+    final prefix = '${username}_${chatId}_';
     final keysToDelete = <String>[];
 
-    // 遍历所有消息 key
+    // 遍历所有消息 key，匹配 {username}_{chatId}_{yyyyMMdd}
     for (final key in _messagesBox.keys) {
-      if (key is String && key.startsWith('${chatId}_')) {
-        final dateStr = key.substring(key.lastIndexOf('_') + 1);
+      if (key is String && key.startsWith(prefix)) {
+        final dateStr = key.substring(prefix.length);
         try {
-          final date = DateTime.parse(dateStr);
-          final diff = now.difference(date).inDays;
-          if (diff > daysKeep) {
-            keysToDelete.add(key);
+          // 解析紧凑格式 yyyyMMdd
+          if (dateStr.length == 8) {
+            final year = int.parse(dateStr.substring(0, 4));
+            final month = int.parse(dateStr.substring(4, 6));
+            final day = int.parse(dateStr.substring(6, 8));
+            final date = DateTime(year, month, day);
+            final diff = now.difference(date).inDays;
+            if (diff > daysKeep) {
+              keysToDelete.add(key);
+            }
           }
         } catch (e) {
           // 忽略解析错误的 key
@@ -327,10 +381,11 @@ class StorageService {
 
   // ==================== Helper Methods ====================
 
-  /// 生成日期 key: {chatId}_{yyyyMMdd}
+  /// 生成日期 key: {username}_{chatId}_{yyyyMMdd}
   String _getDateKey(String chatId, DateTime date) {
+    final username = getUsername() ?? 'anonymous';
     final dateStr =
         '${date.year}${date.month.toString().padLeft(2, '0')}${date.day.toString().padLeft(2, '0')}';
-    return '${chatId}_$dateStr';
+    return '${username}_${chatId}_$dateStr';
   }
 }

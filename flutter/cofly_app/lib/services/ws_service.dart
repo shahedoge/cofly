@@ -30,6 +30,7 @@ class WsService {
   bool _intentionalDisconnect = false;
   String? _chatId;
   String? _username;
+  String? _botOpenId;
 
   // Timers
   Timer? _reconnectTimer;
@@ -50,8 +51,9 @@ class WsService {
   Future<void> connect({
     required String chatId,
     required String username,
+    String? botOpenId,
   }) async {
-    debugPrint('[WS] connect called: chatId=$chatId, username=$username');
+    debugPrint('[WS] connect called: chatId=$chatId, username=$username, botOpenId=$botOpenId');
 
     if (_isConnected) {
       debugPrint('[WS] already connected, disconnecting first');
@@ -60,6 +62,7 @@ class WsService {
 
     _chatId = chatId;
     _username = username;
+    _botOpenId = botOpenId;
     _intentionalDisconnect = false;
 
     final apiUrl = _storage.getApiUrl();
@@ -156,7 +159,7 @@ class WsService {
 
     await disconnect();
     await Future.delayed(const Duration(seconds: 2));
-    await connect(chatId: _chatId!, username: _username!);
+    await connect(chatId: _chatId!, username: _username!, botOpenId: _botOpenId);
   }
 
   // ==================== Frame Handling ====================
@@ -259,7 +262,7 @@ class WsService {
         content: textContent,
         type: Message.parseMessageType(messageType),
         createdAt: createdAt,
-        isFromBot: true,
+        isFromBot: _botOpenId != null ? senderId == _botOpenId : true,
       );
 
       _messageStream.add(message);
@@ -305,7 +308,7 @@ class WsService {
         content: textContent,
         type: Message.parseMessageType(messageType),
         createdAt: createdAt,
-        isFromBot: true,
+        isFromBot: _botOpenId != null ? senderId == _botOpenId : true,
       );
 
       _messageStream.add(message);
@@ -316,62 +319,9 @@ class WsService {
 
   // ==================== Content Parsing ====================
 
-  /// 从消息 content JSON 中提取文本内容
-  /// 支持: {"text":"..."} / {"<lang>":{"content":[[{"tag":"...","text":"..."}]]}}
-  ///       / 卡片格式 {"schema":"2.0","body":{"elements":[{"tag":"markdown","content":"..."}]}}
-  ///       / 原始字符串
+  /// 从消息 content JSON 中提取文本内容（委托给 Message 共享方法）
   String _extractContent(String contentStr) {
-    try {
-      final decoded = jsonDecode(contentStr);
-      if (decoded is Map) {
-        // 简单文本格式: {"text":"hello"}
-        if (decoded.containsKey('text')) {
-          return decoded['text'] as String;
-        }
-
-        // 卡片格式 (schema 2.0): 提取 body.elements 中所有 markdown 元素的 content
-        if (decoded.containsKey('schema') && decoded.containsKey('body')) {
-          final body = decoded['body'];
-          if (body is Map) {
-            final elements = body['elements'] as List<dynamic>?;
-            if (elements != null) {
-              final parts = <String>[];
-              for (final el in elements) {
-                if (el is Map &&
-                    el['tag'] == 'markdown' &&
-                    el.containsKey('content')) {
-                  parts.add(el['content'] as String);
-                }
-              }
-              if (parts.isNotEmpty) return parts.join('\n\n');
-            }
-          }
-        }
-
-        // 富文本格式: {"<lang>":{"content":[[{"tag":"...","text":"..."}]]}}
-        // 遍历所有语言键，提取所有含 text 字段的元素
-        for (final langKey in decoded.keys) {
-          final langVal = decoded[langKey];
-          if (langVal is Map) {
-            final content = langVal['content'] as List<dynamic>?;
-            if (content != null) {
-              final parts = <String>[];
-              for (final row in content) {
-                if (row is List) {
-                  for (final element in row) {
-                    if (element is Map && element.containsKey('text')) {
-                      parts.add(element['text'] as String);
-                    }
-                  }
-                }
-              }
-              if (parts.isNotEmpty) return parts.join('\n');
-            }
-          }
-        }
-      }
-    } catch (_) {}
-    return contentStr;
+    return Message.extractTextContent(contentStr);
   }
 
   // ==================== Heartbeat ====================

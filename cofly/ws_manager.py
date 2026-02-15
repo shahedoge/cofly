@@ -3,7 +3,7 @@ import json
 import logging
 import time
 import uuid
-from typing import Dict
+from typing import Dict, List
 
 from fastapi import WebSocket
 
@@ -14,56 +14,70 @@ logger = logging.getLogger("cofly.ws")
 
 class WSManager:
     def __init__(self):
-        # user_id -> WebSocket
-        self.connections: Dict[str, WebSocket] = {}
+        # user_id -> list of WebSocket connections (supports multi-device)
+        self.connections: Dict[str, List[WebSocket]] = {}
         self._seq_counter = 0
         # user_id -> list of pending events (delivered when user connects)
         self._pending: Dict[str, list] = {}
 
     async def connect(self, user_id: str, ws: WebSocket):
         await ws.accept()
-        self.connections[user_id] = ws
-        logger.info("WS connected: user_id=%s (total: %d)", user_id, len(self.connections))
+        self.connections.setdefault(user_id, []).append(ws)
+        total = sum(len(v) for v in self.connections.values())
+        logger.info("WS connected: user_id=%s (total connections: %d)", user_id, total)
         # Flush any pending events
         pending = self._pending.pop(user_id, [])
         for event_json in pending:
             await self.push_event(user_id, event_json)
 
-    def disconnect(self, user_id: str):
-        self.connections.pop(user_id, None)
-        logger.info("WS disconnected: user_id=%s (total: %d)", user_id, len(self.connections))
+    def disconnect(self, user_id: str, ws: WebSocket = None):
+        if ws is not None:
+            conns = self.connections.get(user_id, [])
+            if ws in conns:
+                conns.remove(ws)
+            if not conns:
+                self.connections.pop(user_id, None)
+        else:
+            self.connections.pop(user_id, None)
+        total = sum(len(v) for v in self.connections.values())
+        logger.info("WS disconnected: user_id=%s (total connections: %d)", user_id, total)
 
     def is_online(self, user_id: str) -> bool:
-        return user_id in self.connections
+        return bool(self.connections.get(user_id))
 
-    async def handle_frame(self, user_id: str, data: bytes):
+    async def handle_frame(self, user_id: str, ws: WebSocket, data: bytes):
         frame = parse_frame(data)
         frame_type = get_header(frame, "type")
         if frame_type == "ping":
-            ws = self.connections.get(user_id)
-            if ws:
-                pong = make_pong_frame(frame)
-                await ws.send_bytes(pong)
+            pong = make_pong_frame(frame)
+            await ws.send_bytes(pong)
 
     async def push_event(self, target_user_id: str, event_json: dict) -> bool:
-        """Push event to target user. Returns True if delivered immediately, False if queued."""
-        ws = self.connections.get(target_user_id)
-        if not ws:
+        """Push event to target user (all connections). Returns True if delivered to at least one."""
+        conns = self.connections.get(target_user_id, [])
+        if not conns:
             logger.info("push_event: user_id=%s NOT online, queuing. Online: %s",
                         target_user_id, list(self.connections.keys()))
             self._pending.setdefault(target_user_id, []).append(event_json)
             return False
         self._seq_counter += 1
         frame_bytes = make_event_frame(event_json, seq_id=self._seq_counter)
-        try:
-            await ws.send_bytes(frame_bytes)
+        any_sent = False
+        failed = []
+        for ws in conns:
+            try:
+                await ws.send_bytes(frame_bytes)
+                any_sent = True
+            except Exception as e:
+                logger.error("push_event: failed for user_id=%s: %s", target_user_id, e)
+                failed.append(ws)
+        # Clean up failed connections
+        for ws in failed:
+            self.disconnect(target_user_id, ws)
+        if any_sent:
             logger.info("push_event: sent to user_id=%s, event_type=%s",
                         target_user_id, event_json.get("header", {}).get("event_type"))
-            return True
-        except Exception as e:
-            logger.error("push_event: failed for user_id=%s: %s", target_user_id, e)
-            self.disconnect(target_user_id)
-            return False
+        return any_sent
 
 
 def build_message_event(

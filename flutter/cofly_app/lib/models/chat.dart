@@ -109,10 +109,19 @@ class ChatListResponse {
   ChatListResponse({required this.chats});
 
   factory ChatListResponse.fromJson(Map<String, dynamic> json) {
-    final chats = (json['chats'] as List<dynamic>?)
-            ?.map((e) => Chat.fromJson(e))
-            .toList() ??
-        [];
+    // 服务器返回格式: {code: 0, data: {items: [{chat_id, chat_type, name, owner_id}]}}
+    final data = json['data'] as Map<String, dynamic>? ?? {};
+    final items = (data['items'] as List<dynamic>?) ?? [];
+
+    final chats = items.map((e) {
+      final item = Map<String, dynamic>.from(e as Map);
+      return Chat(
+        id: item['chat_id'] as String? ?? '',
+        name: item['name'] as String? ?? '',
+        avatar: item['avatar'] as String?,
+        lastMessageTime: DateTime.now(),
+      );
+    }).toList();
 
     return ChatListResponse(chats: chats);
   }

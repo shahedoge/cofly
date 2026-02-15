@@ -1,3 +1,4 @@
+import calendar
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -58,12 +59,10 @@ async def _save_and_push(
     db.commit()
     db.refresh(msg)
 
-    # Push to other members, track delivery status
-    any_delivered = False
+    # Push to ALL members (including sender for multi-device sync)
+    any_bot_delivered = False
     members = db.query(ChatMember).filter(ChatMember.chat_id == chat.id).all()
     for m in members:
-        if m.user_id == sender.id:
-            continue
         target_user = db.query(User).filter(User.id == m.user_id).first()
         if not target_user:
             continue
@@ -79,15 +78,15 @@ async def _save_and_push(
             parent_id=msg.parent_id,
         )
         delivered = await ws_manager.push_event(m.user_id, event)
-        if delivered:
-            any_delivered = True
+        if delivered and m.user_id != sender.id:
+            any_bot_delivered = True
 
     # Push ack back to sender
     ack = build_ack_event(
         message_id=msg.id,
         chat_id=chat.id,
         receiver_username=sender.username,
-        bot_delivered=any_delivered,
+        bot_delivered=any_bot_delivered,
     )
     await ws_manager.push_event(sender.id, ack)
 
@@ -117,7 +116,7 @@ async def send_message(
     return {"code": 0, "msg": "ok", "data": {
         "message_id": msg.id,
         "chat_id": msg.chat_id,
-        "create_time": str(int(msg.created_at.timestamp() * 1000)),
+        "create_time": str(int(calendar.timegm(msg.created_at.timetuple()) * 1000)),
     }}
 
 
@@ -140,7 +139,7 @@ async def reply_message(
     return {"code": 0, "msg": "ok", "data": {
         "message_id": msg.id,
         "chat_id": msg.chat_id,
-        "create_time": str(int(msg.created_at.timestamp() * 1000)),
+        "create_time": str(int(calendar.timegm(msg.created_at.timetuple()) * 1000)),
     }}
 
 
@@ -168,7 +167,7 @@ def get_message(
             },
             "root_id": msg.root_id,
             "parent_id": msg.parent_id,
-            "create_time": str(int(msg.created_at.timestamp() * 1000)),
+            "create_time": str(int(calendar.timegm(msg.created_at.timetuple()) * 1000)),
         }]
     }}
 
@@ -195,8 +194,6 @@ async def patch_message(
     if chat:
         members = db.query(ChatMember).filter(ChatMember.chat_id == chat.id).all()
         for m in members:
-            if m.user_id == user.id:
-                continue
             target_user = db.query(User).filter(User.id == m.user_id).first()
             if not target_user:
                 continue
@@ -216,7 +213,7 @@ async def patch_message(
         "chat_id": msg.chat_id,
         "msg_type": msg.message_type,
         "body": {"content": msg.content},
-        "update_time": str(int(msg.created_at.timestamp() * 1000)),
+        "update_time": str(int(calendar.timegm(msg.created_at.timetuple()) * 1000)),
     }}
 
 
@@ -245,7 +242,7 @@ def list_chat_messages(
     query = db.query(Message).filter(Message.chat_id == chat_id)
 
     if start_time is not None:
-        cutoff = datetime.fromtimestamp(start_time / 1000, tz=timezone.utc)
+        cutoff = datetime.utcfromtimestamp(start_time / 1000)
         query = query.filter(Message.created_at >= cutoff)
 
     messages = (
@@ -269,7 +266,7 @@ def list_chat_messages(
             },
             "root_id": msg.root_id,
             "parent_id": msg.parent_id,
-            "create_time": str(int(msg.created_at.timestamp() * 1000)),
+            "create_time": str(int(calendar.timegm(msg.created_at.timetuple()) * 1000)),
         })
 
     return {"code": 0, "msg": "ok", "data": {"items": items}}

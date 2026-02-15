@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Cofly is a chat application system that provides a pluggable, publicly-accessible message forwarding interface for the OpenClaw/Claw ecosystem. It consists of two main components:
 
 1. **Python FastAPI Backend** (`cofly/`) - REST API + WebSocket server
-2. **Flutter Desktop Client** (`flutter/cofly_app/`) - Cross-platform client (macOS primary)
+2. **Flutter Client** (`flutter/cofly_app/`) - Cross-platform client (macOS, Android)
 
 The app works with OpenClaw and the feishu (Lark/Feishu) plugin to provide multi-agent messaging capabilities.
 
@@ -45,13 +45,13 @@ flutter pub get
 flutter run -d macos
 
 # Build macOS app
-flutter build macos
+flutter build macos --release
 
-# Build for iOS
-flutter build ios
+# Build macOS DMG installer
+hdiutil create -volname "沙河小狗" -srcfolder build/macos/Build/Products/Release/沙河小狗.app -ov -format UDZO build/沙河小狗.dmg
 
-# Build for Android
-flutter build apk
+# Build for Android (split per ABI)
+flutter build apk --release --split-per-abi
 ```
 
 ### Seed Bot Registration
@@ -92,7 +92,9 @@ Key services:
 - `notification_service.dart` - Native notifications
 - `tray_service.dart` - macOS system tray integration
 
-Desktop features use: `window_manager`, `tray_manager`, `flutter_local_notifications`
+Platform-specific features:
+- macOS: `window_manager`, `tray_manager`, `flutter_local_notifications`
+- Android: native notifications, file/image picker
 
 ### Message Types
 

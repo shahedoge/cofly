@@ -331,7 +331,8 @@ class ApiService {
 
   /// 发送消息
   /// content 格式: text 类型需要 JSON 序列化为 '{"text":"..."}'
-  Future<void> sendMessage({
+  /// 返回服务器分配的 message_id（用于去重）
+  Future<String?> sendMessage({
     required String receiveId,
     required String content,
     MessageType type = MessageType.text,
@@ -369,6 +370,10 @@ class ApiService {
           statusCode: response.statusCode,
         );
       }
+
+      // Return server-assigned message_id
+      final data = body['data'] as Map<String, dynamic>?;
+      return data?['message_id'] as String?;
     } on DioException catch (e) {
       throw _handleDioException(e);
     }
@@ -377,16 +382,16 @@ class ApiService {
   /// 获取消息列表
   Future<MessageListResponse> getMessages({
     required String chatId,
-    int limit = 50,
-    String? before,
+    int pageSize = 200,
+    int? startTime,
   }) async {
     try {
       final queryParams = <String, dynamic>{
-        'limit': limit,
+        'page_size': pageSize,
       };
 
-      if (before != null) {
-        queryParams['before'] = before;
+      if (startTime != null) {
+        queryParams['start_time'] = startTime;
       }
 
       final response = await _dio.get(
