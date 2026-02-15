@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:tray_manager/tray_manager.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -15,13 +17,18 @@ class TrayService with TrayListener {
     if (!PlatformHelper.isDesktop) return;
     if (_initialized) return;
 
-    // tray_manager on macOS loads the icon via rootBundle.load(),
-    // so pass the Flutter asset path directly.
-    await trayManager.setIcon(
-      'assets/tray_icon.png',
-      isTemplate: true,
-    );
-    await trayManager.setToolTip('Cofly');
+    // 根据平台设置托盘图标
+    if (Platform.isWindows) {
+      // Windows 使用 .ico 格式图标
+      await trayManager.setIcon('assets/tray_icon.ico');
+    } else if (Platform.isMacOS) {
+      // macOS 使用模板图片
+      await trayManager.setIcon(
+        'assets/tray_icon.png',
+        isTemplate: true,
+      );
+    }
+    await trayManager.setToolTip('沙河小狗');
 
     final menu = Menu(items: [
       MenuItem(key: 'show_hide', label: '显示 / 隐藏窗口'),

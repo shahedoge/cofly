@@ -1,11 +1,22 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 
 /// 应用主题配置
 class AppTheme {
+  // 获取平台默认字体
+  static String? _getDefaultFontFamily() {
+    if (Platform.isWindows) {
+      return 'Microsoft YaHei'; // Windows 微软雅黑，支持中文
+    }
+    return null; // 其他平台使用默认
+  }
+
   // 浅色主题
   static ThemeData lightTheme(Color? seedColor) {
     return ThemeData(
       useMaterial3: true,
+      fontFamily: _getDefaultFontFamily(),
       colorScheme: seedColor != null
           ? ColorScheme.fromSeed(
               seedColor: seedColor,
@@ -56,6 +67,7 @@ class AppTheme {
   static ThemeData darkTheme(Color? seedColor) {
     return ThemeData(
       useMaterial3: true,
+      fontFamily: _getDefaultFontFamily(),
       colorScheme: seedColor != null
           ? ColorScheme.fromSeed(
               seedColor: seedColor,

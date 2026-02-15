@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:window_manager/window_manager.dart';
 
@@ -25,10 +27,18 @@ class NotificationService {
       requestSoundPermission: true,
     );
 
+    // Windows 通知设置
+    const windowsSettings = WindowsInitializationSettings(
+      appName: '沙河小狗',
+      appUserModelId: 'org.shahe.cofly',
+      guid: '5365dfdd-f287-4780-bbfa-8eb0e1c8c008',
+    );
+
     const initSettings = InitializationSettings(
       android: androidSettings,
       macOS: darwinSettings,
       iOS: darwinSettings,
+      windows: windowsSettings,
     );
 
     await _plugin.initialize(
@@ -37,7 +47,9 @@ class NotificationService {
     );
 
     // Request permissions per platform
-    if (PlatformHelper.isDesktop) {
+    if (Platform.isWindows) {
+      // Windows 不需要额外请求权限
+    } else if (PlatformHelper.isDesktop) {
       await _plugin
           .resolvePlatformSpecificImplementation<
               MacOSFlutterLocalNotificationsPlugin>()
@@ -73,10 +85,14 @@ class NotificationService {
       presentSound: true,
     );
 
+    // Windows 通知详情 (使用默认构造)
+    const windowsDetails = WindowsNotificationDetails();
+
     const details = NotificationDetails(
       android: androidDetails,
       macOS: darwinDetails,
       iOS: darwinDetails,
+      windows: windowsDetails,
     );
 
     await _plugin.show(
