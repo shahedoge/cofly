@@ -298,6 +298,35 @@ class StorageService {
     }
   }
 
+  /// 清除指定聊天的所有本地消息
+  Future<void> clearChatMessages(String chatId) async {
+    final username = getUsername() ?? 'anonymous';
+    final prefix = '${username}_${chatId}_';
+    final keysToDelete = <String>[];
+
+    for (final key in _messagesBox.keys) {
+      if (key is String && key.startsWith(prefix)) {
+        keysToDelete.add(key);
+      }
+    }
+
+    for (final key in keysToDelete) {
+      await _messagesBox.delete(key);
+    }
+  }
+
+  /// 获取聊天清空时间戳
+  int? getClearTimestamp(String chatId) {
+    final username = getUsername() ?? 'anonymous';
+    return _configBox.get('clear_ts_${username}_$chatId') as int?;
+  }
+
+  /// 设置聊天清空时间戳
+  Future<void> setClearTimestamp(String chatId, int timestamp) async {
+    final username = getUsername() ?? 'anonymous';
+    await _configBox.put('clear_ts_${username}_$chatId', timestamp);
+  }
+
   /// 清除所有聊天记录
   Future<void> clearAllMessages() async {
     await _messagesBox.clear();

@@ -147,13 +147,13 @@ class ChatProvider with ChangeNotifier {
 
       // 按时间排序
       _messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
-
-      // 滚动到底部
-      _scrollToBottom();
     } catch (e) {
       _errorMessage = e.toString();
     }
     notifyListeners();
+
+    // 滚动到底部（在 notifyListeners 之后，确保 UI 已用新数据重建）
+    _scrollToBottom(animate: false);
   }
 
   /// 发送消息
@@ -422,7 +422,11 @@ class ChatProvider with ChangeNotifier {
 
   /// 清除历史消息
   Future<void> clearHistory() async {
-    await _storage.clearOldMessages(_currentChatId);
+    await _storage.clearChatMessages(_currentChatId);
+    await _storage.setClearTimestamp(
+      _currentChatId,
+      DateTime.now().millisecondsSinceEpoch,
+    );
     _messages.clear();
     notifyListeners();
   }
@@ -496,6 +500,15 @@ class ChatProvider with ChangeNotifier {
             .map((m) => m.createdAt.millisecondsSinceEpoch)
             .reduce((a, b) => a > b ? a : b);
         startTime = latest + 1;
+      }
+
+      // 如果本地无消息但存在清空时间戳，用它作为 startTime，
+      // 避免全量拉取已被用户清空的旧消息
+      if (startTime == null) {
+        final clearTs = _storage.getClearTimestamp(_currentChatId);
+        if (clearTs != null) {
+          startTime = clearTs + 1;
+        }
       }
 
       debugPrint('[Chat] _syncFromServer: serverChatId=$_serverChatId, startTime=$startTime');
@@ -574,15 +587,21 @@ class ChatProvider with ChangeNotifier {
   }
 
   /// 滚动到底部
-  void _scrollToBottom() {
+  void _scrollToBottom({bool animate = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (scrollController.hasClients &&
           scrollController.positions.length == 1) {
-        scrollController.animateTo(
-          scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
+        if (animate) {
+          scrollController.animateTo(
+            scrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        } else {
+          scrollController.jumpTo(
+            scrollController.position.maxScrollExtent,
+          );
+        }
       }
     });
   }

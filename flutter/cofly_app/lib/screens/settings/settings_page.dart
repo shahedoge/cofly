@@ -182,6 +182,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
     try {
       await _storage.clearOldMessages(_storage.getBotUsername() ?? 'default');
+      // 刷新 ChatProvider 内存中的消息列表
+      await _chatProvider.loadRecentMessages();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已清除2天前的聊天记录')),
